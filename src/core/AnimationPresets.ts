@@ -1,12 +1,10 @@
-import { PerformanceMonitor, SpringConfig } from './PerformanceMonitor';
+import { PerformanceMonitor } from './PerformanceMonitor';
 import {
   withSpring,
   withTiming,
   withSequence,
   withDelay,
   Easing,
-  WithSpringConfig,
-  WithTimingConfig,
   runOnJS,
 } from 'react-native-reanimated';
 
@@ -38,11 +36,16 @@ export interface AnimationOptions {
   adaptive?: boolean;
 }
 
-interface SpringPresetConfig extends WithSpringConfig {
-  name: AnimationPreset;
+export interface SpringConfig {
+  damping: number;
+  stiffness: number;
+  mass: number;
+  overshootClamping: boolean;
+  restDisplacementThreshold: number;
+  restSpeedThreshold: number;
 }
 
-const SPRING_PRESETS: Record<AnimationPreset, Omit<SpringPresetConfig, 'name'>> = {
+const SPRING_PRESETS: Record<AnimationPreset, SpringConfig> = {
   bounce: {
     damping: 8,
     stiffness: 200,
@@ -126,10 +129,9 @@ class AnimationPresetsClass {
     this.adaptiveEnabled = enabled;
   }
 
-  // Get spring config with automatic adaptation
-  getSpringConfig(preset: AnimationPreset, adaptive = true): WithSpringConfig {
+  getSpringConfig(preset: AnimationPreset, adaptive = true): SpringConfig {
     const baseConfig = SPRING_PRESETS[preset];
-    
+
     if (!adaptive || !this.adaptiveEnabled) {
       return baseConfig;
     }
@@ -140,29 +142,24 @@ class AnimationPresetsClass {
     if (shouldReduce) {
       return {
         ...baseConfig,
-        damping: (baseConfig.damping || 10) + 10,
-        stiffness: (baseConfig.stiffness || 100) * 0.7,
+        damping: baseConfig.damping + 10,
+        stiffness: baseConfig.stiffness * 0.7,
         overshootClamping: true,
       };
     }
 
-    // Enhance animations on high-end devices
     if (capabilities.tier === 'ultra' || capabilities.tier === 'high') {
       return {
         ...baseConfig,
-        damping: (baseConfig.damping || 10) * 0.9,
-        stiffness: (baseConfig.stiffness || 100) * 1.1,
+        damping: baseConfig.damping * 0.9,
+        stiffness: baseConfig.stiffness * 1.1,
       };
     }
 
     return baseConfig;
   }
 
-  // Create spring animation
-  spring(
-    toValue: number,
-    options: AnimationOptions = {}
-  ) {
+  spring(toValue: number, options: AnimationOptions = {}) {
     const preset = options.preset || 'smooth';
     const config = this.getSpringConfig(preset, options.adaptive ?? true);
 
@@ -179,11 +176,7 @@ class AnimationPresetsClass {
     return animation;
   }
 
-  // Create timing animation
-  timing(
-    toValue: number,
-    options: AnimationOptions = {}
-  ) {
+  timing(toValue: number, options: AnimationOptions = {}) {
     const baseDuration = options.duration || 300;
     const easing = options.easing || 'easeOut';
     const adaptive = options.adaptive ?? true;
@@ -193,7 +186,7 @@ class AnimationPresetsClass {
       duration = PerformanceMonitor.getAdaptiveDuration(baseDuration);
     }
 
-    const config: WithTimingConfig = {
+    const config = {
       duration,
       easing: EASING_FUNCTIONS[easing],
     };
@@ -211,12 +204,10 @@ class AnimationPresetsClass {
     return animation;
   }
 
-  // Create a sequence of animations
   sequence(animations: ReturnType<typeof withSpring | typeof withTiming>[]) {
     return withSequence(...animations);
   }
 
-  // Common animation patterns
   patterns = {
     fadeIn: (options?: AnimationOptions) => ({
       opacity: this.timing(1, { duration: 200, easing: 'easeOut', ...options }),
@@ -234,23 +225,7 @@ class AnimationPresetsClass {
       transform: [{ scale: this.timing(0, { duration: 150, easing: 'easeIn', ...options }) }],
     }),
 
-    slideInUp: (distance: number, options?: AnimationOptions) => ({
-      transform: [{ translateY: this.spring(0, { preset: 'smooth', ...options }) }],
-    }),
-
-    slideInDown: (distance: number, options?: AnimationOptions) => ({
-      transform: [{ translateY: this.spring(0, { preset: 'smooth', ...options }) }],
-    }),
-
-    slideInLeft: (distance: number, options?: AnimationOptions) => ({
-      transform: [{ translateX: this.spring(0, { preset: 'smooth', ...options }) }],
-    }),
-
-    slideInRight: (distance: number, options?: AnimationOptions) => ({
-      transform: [{ translateX: this.spring(0, { preset: 'smooth', ...options }) }],
-    }),
-
-    bounce: (options?: AnimationOptions) => ({
+    bounce: () => ({
       transform: [
         {
           scale: this.sequence([
@@ -261,7 +236,7 @@ class AnimationPresetsClass {
       ],
     }),
 
-    shake: (intensity = 10, options?: AnimationOptions) => ({
+    shake: (intensity = 10) => ({
       transform: [
         {
           translateX: this.sequence([
@@ -275,7 +250,7 @@ class AnimationPresetsClass {
       ],
     }),
 
-    pulse: (options?: AnimationOptions) => ({
+    pulse: () => ({
       transform: [
         {
           scale: this.sequence([
@@ -285,54 +260,25 @@ class AnimationPresetsClass {
         },
       ],
     }),
-
-    rubberBand: (options?: AnimationOptions) => ({
-      transform: [
-        {
-          scaleX: this.sequence([
-            withTiming(1.25, { duration: 100 }),
-            withTiming(0.75, { duration: 100 }),
-            withTiming(1.15, { duration: 100 }),
-            withTiming(0.95, { duration: 100 }),
-            withSpring(1, { damping: 10, stiffness: 200 }),
-          ]),
-        },
-        {
-          scaleY: this.sequence([
-            withTiming(0.75, { duration: 100 }),
-            withTiming(1.25, { duration: 100 }),
-            withTiming(0.85, { duration: 100 }),
-            withTiming(1.05, { duration: 100 }),
-            withSpring(1, { damping: 10, stiffness: 200 }),
-          ]),
-        },
-      ],
-    }),
   };
 
-  // Get velocity-based duration (slower animations for faster gestures feel more responsive)
   getVelocityBasedDuration(velocity: number, baseDuration: number, minDuration = 100): number {
     const absVelocity = Math.abs(velocity);
     const factor = Math.max(0.3, 1 - absVelocity / 3000);
     return Math.max(minDuration, baseDuration * factor);
   }
 
-  // Get velocity-based spring config
-  getVelocityBasedSpring(
-    velocity: number,
-    preset: AnimationPreset = 'smooth'
-  ): WithSpringConfig {
+  getVelocityBasedSpring(velocity: number, preset: AnimationPreset = 'smooth'): SpringConfig & { velocity: number } {
     const baseConfig = this.getSpringConfig(preset);
     const absVelocity = Math.abs(velocity);
 
-    // Higher velocity = stiffer spring
     const stiffnessMultiplier = 1 + Math.min(0.5, absVelocity / 2000);
     const dampingMultiplier = 1 + Math.min(0.3, absVelocity / 3000);
 
     return {
       ...baseConfig,
-      stiffness: (baseConfig.stiffness || 100) * stiffnessMultiplier,
-      damping: (baseConfig.damping || 10) * dampingMultiplier,
+      stiffness: baseConfig.stiffness * stiffnessMultiplier,
+      damping: baseConfig.damping * dampingMultiplier,
       velocity,
     };
   }

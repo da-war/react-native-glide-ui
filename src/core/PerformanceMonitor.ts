@@ -51,7 +51,6 @@ class PerformanceMonitorClass {
     const screenDensity = PixelRatio.get();
     const screenPixels = width * height * screenDensity * screenDensity;
 
-    // Determine device tier based on screen and platform
     let tier: DeviceCapabilities['tier'] = 'mid';
     let memoryClass: DeviceCapabilities['memoryClass'] = 'standard';
 
@@ -66,7 +65,6 @@ class PerformanceMonitorClass {
       memoryClass = 'low';
     }
 
-    // Screen size classification
     const diagonal = Math.sqrt(width * width + height * height);
     let screenSize: DeviceCapabilities['screenSize'] = 'medium';
     if (diagonal < 500) screenSize = 'small';
@@ -74,14 +72,12 @@ class PerformanceMonitorClass {
     else if (diagonal < 900) screenSize = 'large';
     else screenSize = 'xlarge';
 
-    // Refresh rate estimation (default to 60, assume ProMotion on newer iOS)
     const refreshRate = Platform.OS === 'ios' && tier === 'ultra' ? 120 : 60;
 
-    // Feature support
-    const supportsHaptics = Platform.OS === 'ios' || Platform.Version >= 26;
-    const supportsBlur = Platform.OS === 'ios' || (Platform.OS === 'android' && Platform.Version >= 31);
+    const platformVersion = typeof Platform.Version === 'number' ? Platform.Version : parseInt(String(Platform.Version), 10) || 0;
+    const supportsHaptics = Platform.OS === 'ios' || platformVersion >= 26;
+    const supportsBlur = Platform.OS === 'ios' || platformVersion >= 31;
 
-    // Performance recommendations based on tier
     const performanceConfig = this.getPerformanceConfig(tier);
 
     this.capabilities = {
@@ -165,19 +161,16 @@ class PerformanceMonitorClass {
     const now = performance.now();
     this.frameTimestamps.push(now);
 
-    // Keep only last 60 frames
     if (this.frameTimestamps.length > 60) {
       this.frameTimestamps.shift();
     }
 
-    // Calculate FPS every 30 frames
     if (this.frameTimestamps.length >= 30) {
       const oldestTimestamp = this.frameTimestamps[0];
       const newestTimestamp = this.frameTimestamps[this.frameTimestamps.length - 1];
       const duration = newestTimestamp - oldestTimestamp;
       const fps = Math.round((this.frameTimestamps.length - 1) / (duration / 1000));
 
-      // Count frame drops (frames taking longer than 1.5x expected)
       const expectedFrameTime = 1000 / (this.capabilities?.refreshRate || 60);
       let frameDrops = 0;
       for (let i = 1; i < this.frameTimestamps.length; i++) {
@@ -187,7 +180,6 @@ class PerformanceMonitorClass {
         }
       }
 
-      // Calculate jank score (0-100, lower is better)
       const jankScore = Math.min(100, Math.round((frameDrops / this.frameTimestamps.length) * 100 * 5));
 
       this.metrics = {
@@ -224,7 +216,6 @@ class PerformanceMonitorClass {
     return { ...this.metrics };
   }
 
-  // Adaptive recommendations
   shouldReduceAnimations(): boolean {
     return this.metrics.jankScore > 30 || this.metrics.fps < 45;
   }
@@ -247,7 +238,7 @@ class PerformanceMonitorClass {
 
   getAdaptiveDuration(baseDuration: number): number {
     if (this.shouldReduceAnimations()) {
-      return baseDuration * 0.7; // Faster animations when struggling
+      return baseDuration * 0.7;
     }
     return baseDuration;
   }

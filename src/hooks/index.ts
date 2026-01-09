@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   useSharedValue,
   useAnimatedStyle,
@@ -18,12 +18,12 @@ import {
 
 import { PerformanceMonitor, DeviceCapabilities, PerformanceMetrics } from '../core/PerformanceMonitor';
 import { AdaptiveLayoutEngine, LayoutMetrics, ResponsiveValue, Breakpoint } from '../core/AdaptiveLayoutEngine';
-import { GestureIntelligence, SwipeGestureData, GestureDirection } from '../core/GestureIntelligence';
+import { GestureIntelligence, SwipeGestureData } from '../core/GestureIntelligence';
 import { AnimationPresets, AnimationPreset, AnimationOptions } from '../core/AnimationPresets';
 import { HapticsController, HapticFeedbackType } from '../core/HapticsController';
 
 // ============================================
-// useGlideLayout - Adaptive layout hook
+// useGlideLayout
 // ============================================
 export interface UseGlideLayoutReturn {
   metrics: LayoutMetrics;
@@ -44,7 +44,9 @@ export function useGlideLayout(): UseGlideLayoutReturn {
   useEffect(() => {
     AdaptiveLayoutEngine.initialize();
     const unsubscribe = AdaptiveLayoutEngine.subscribe(setMetrics);
-    return unsubscribe;
+    return () => {
+      unsubscribe();
+    };
   }, []);
 
   return useMemo(
@@ -58,15 +60,14 @@ export function useGlideLayout(): UseGlideLayoutReturn {
       resolve: <T,>(value: ResponsiveValue<T> | T) => AdaptiveLayoutEngine.resolve(value),
       wp: (percentage: number) => AdaptiveLayoutEngine.wp(percentage),
       hp: (percentage: number) => AdaptiveLayoutEngine.hp(percentage),
-      columns: (config?: Partial<Record<Breakpoint, number>>) =>
-        AdaptiveLayoutEngine.getColumns(config),
+      columns: (config?: Partial<Record<Breakpoint, number>>) => AdaptiveLayoutEngine.getColumns(config),
     }),
     [metrics]
   );
 }
 
 // ============================================
-// useGlidePerformance - Performance monitoring hook
+// useGlidePerformance
 // ============================================
 export interface UseGlidePerformanceReturn {
   capabilities: DeviceCapabilities;
@@ -89,6 +90,7 @@ export function useGlidePerformance(enableMonitoring = false): UseGlidePerforman
         PerformanceMonitor.stopMonitoring();
       };
     }
+    return undefined;
   }, [enableMonitoring]);
 
   return useMemo(
@@ -104,7 +106,7 @@ export function useGlidePerformance(enableMonitoring = false): UseGlidePerforman
 }
 
 // ============================================
-// useGlideAnimation - Adaptive animation hook
+// useGlideAnimation
 // ============================================
 export interface UseGlideAnimationOptions extends AnimationOptions {
   initialValue?: number;
@@ -118,18 +120,13 @@ export interface UseGlideAnimationReturn {
   reset: () => void;
 }
 
-export function useGlideAnimation(
-  options: UseGlideAnimationOptions = {}
-): UseGlideAnimationReturn {
+export function useGlideAnimation(options: UseGlideAnimationOptions = {}): UseGlideAnimationReturn {
   const { initialValue = 0, preset = 'smooth' } = options;
   const value = useSharedValue(initialValue);
 
   const animateTo = useCallback(
     (toValue: number, animOptions?: AnimationOptions) => {
-      value.value = AnimationPresets.spring(toValue, {
-        preset,
-        ...animOptions,
-      });
+      value.value = AnimationPresets.spring(toValue, { preset, ...animOptions });
     },
     [value, preset]
   );
@@ -156,7 +153,7 @@ export function useGlideAnimation(
 }
 
 // ============================================
-// useGlideGesture - Intelligent gesture hook
+// useGlideGesture
 // ============================================
 export interface UseGlideGestureOptions {
   onSwipe?: (data: SwipeGestureData) => void;
@@ -234,7 +231,6 @@ export function useGlideGesture(options: UseGlideGestureOptions = {}): UseGlideG
           );
           runOnJS(handleSwipe)(swipeData);
 
-          // Snap or return to origin
           if (snapPoints && snapPoints.length > 0) {
             const snapX = GestureIntelligence.calculateSnapPoint(
               translationX.value,
@@ -251,17 +247,14 @@ export function useGlideGesture(options: UseGlideGestureOptions = {}): UseGlideG
   );
 
   const animatedStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: translationX.value },
-      { translateY: translationY.value },
-    ],
+    transform: [{ translateX: translationX.value }, { translateY: translationY.value }],
   }));
 
   return { gesture, translationX, translationY, isActive, animatedStyle };
 }
 
 // ============================================
-// useGlidePress - Animated press hook
+// useGlidePress
 // ============================================
 export interface UseGlidePressOptions {
   scaleDown?: number;
@@ -272,19 +265,13 @@ export interface UseGlidePressOptions {
 }
 
 export interface UseGlidePressReturn {
-  gesture: ReturnType<typeof Gesture.Tap>;
+  gesture: ReturnType<typeof Gesture.Race>;
   animatedStyle: ReturnType<typeof useAnimatedStyle>;
   isPressed: SharedValue<boolean>;
 }
 
 export function useGlidePress(options: UseGlidePressOptions = {}): UseGlidePressReturn {
-  const {
-    scaleDown = 0.96,
-    hapticType = 'light',
-    onPress,
-    onLongPress,
-    disabled = false,
-  } = options;
+  const { scaleDown = 0.96, hapticType = 'light', onPress, onLongPress, disabled = false } = options;
 
   const isPressed = useSharedValue(false);
   const scale = useSharedValue(1);
@@ -330,10 +317,7 @@ export function useGlidePress(options: UseGlidePressOptions = {}): UseGlidePress
     [disabled, onLongPress, handleLongPress]
   );
 
-  const gesture = useMemo(
-    () => Gesture.Race(tapGesture, longPressGesture),
-    [tapGesture, longPressGesture]
-  );
+  const gesture = useMemo(() => Gesture.Race(tapGesture, longPressGesture), [tapGesture, longPressGesture]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
@@ -344,7 +328,7 @@ export function useGlidePress(options: UseGlidePressOptions = {}): UseGlidePress
 }
 
 // ============================================
-// useGlideScroll - Scroll-based animations
+// useGlideScroll
 // ============================================
 export interface UseGlideScrollOptions {
   enableHaptics?: boolean;
@@ -354,10 +338,6 @@ export interface UseGlideScrollOptions {
 export interface UseGlideScrollReturn {
   scrollY: SharedValue<number>;
   onScroll: (y: number) => void;
-  createParallax: (factor: number) => ReturnType<typeof useAnimatedStyle>;
-  createFade: (fadeStart: number, fadeEnd: number) => ReturnType<typeof useAnimatedStyle>;
-  createScale: (scaleStart: number, scaleEnd: number, scrollRange: [number, number]) => ReturnType<typeof useAnimatedStyle>;
-  createHeaderStyle: (headerHeight: number) => ReturnType<typeof useAnimatedStyle>;
 }
 
 export function useGlideScroll(options: UseGlideScrollOptions = {}): UseGlideScrollReturn {
@@ -374,79 +354,11 @@ export function useGlideScroll(options: UseGlideScrollOptions = {}): UseGlideScr
     [scrollY, enableHaptics, hapticThreshold]
   );
 
-  const createParallax = useCallback(
-    (factor: number) =>
-      useAnimatedStyle(() => ({
-        transform: [{ translateY: scrollY.value * factor }],
-      })),
-    [scrollY]
-  );
-
-  const createFade = useCallback(
-    (fadeStart: number, fadeEnd: number) =>
-      useAnimatedStyle(() => ({
-        opacity: interpolate(
-          scrollY.value,
-          [fadeStart, fadeEnd],
-          [1, 0],
-          Extrapolation.CLAMP
-        ),
-      })),
-    [scrollY]
-  );
-
-  const createScale = useCallback(
-    (scaleStart: number, scaleEnd: number, scrollRange: [number, number]) =>
-      useAnimatedStyle(() => ({
-        transform: [
-          {
-            scale: interpolate(
-              scrollY.value,
-              scrollRange,
-              [scaleStart, scaleEnd],
-              Extrapolation.CLAMP
-            ),
-          },
-        ],
-      })),
-    [scrollY]
-  );
-
-  const createHeaderStyle = useCallback(
-    (headerHeight: number) =>
-      useAnimatedStyle(() => {
-        const translateY = interpolate(
-          scrollY.value,
-          [0, headerHeight],
-          [0, -headerHeight],
-          Extrapolation.CLAMP
-        );
-        const opacity = interpolate(
-          scrollY.value,
-          [0, headerHeight * 0.5],
-          [1, 0],
-          Extrapolation.CLAMP
-        );
-        return {
-          transform: [{ translateY }],
-          opacity,
-        };
-      }),
-    [scrollY]
-  );
-
-  return {
-    scrollY,
-    onScroll,
-    createParallax,
-    createFade,
-    createScale,
-    createHeaderStyle,
-  };
+  return { scrollY, onScroll };
 }
 
 // ============================================
-// useGlideHaptics - Haptic feedback hook
+// useGlideHaptics
 // ============================================
 export interface UseGlideHapticsReturn {
   trigger: (type: HapticFeedbackType) => void;
@@ -493,7 +405,7 @@ export function useGlideHaptics(): UseGlideHapticsReturn {
 }
 
 // ============================================
-// useGlideInterpolate - Value interpolation hook
+// useGlideInterpolate
 // ============================================
 export function useGlideInterpolate(
   value: SharedValue<number>,
@@ -501,7 +413,5 @@ export function useGlideInterpolate(
   outputRange: number[],
   extrapolation: Extrapolation = Extrapolation.CLAMP
 ): SharedValue<number> {
-  return useDerivedValue(() =>
-    interpolate(value.value, inputRange, outputRange, extrapolation)
-  );
+  return useDerivedValue(() => interpolate(value.value, inputRange, outputRange, extrapolation));
 }

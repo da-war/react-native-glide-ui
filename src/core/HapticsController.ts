@@ -16,29 +16,14 @@ export type HapticPattern = 'tap' | 'doubleTap' | 'swipe' | 'scroll' | 'notifica
 
 interface HapticOptions {
   enabled?: boolean;
-  intensity?: number; // 0-1
-  pattern?: number[]; // Custom vibration pattern for Android
-}
-
-// Types for the optional haptics libraries
-type ImpactStyle = 'light' | 'medium' | 'heavy' | 'soft' | 'rigid';
-type NotificationType = 'success' | 'warning' | 'error';
-
-interface HapticsModule {
-  impactAsync?: (style: ImpactStyle) => Promise<void>;
-  notificationAsync?: (type: NotificationType) => Promise<void>;
-  selectionAsync?: () => Promise<void>;
-}
-
-interface ReactNativeHapticsModule {
-  trigger?: (type: string, options?: { enableVibrateFallback?: boolean; ignoreAndroidSystemSettings?: boolean }) => void;
+  intensity?: number;
 }
 
 class HapticsControllerClass {
   private enabled = true;
   private intensity = 1;
-  private hapticsModule: HapticsModule | null = null;
-  private rnHapticsModule: ReactNativeHapticsModule | null = null;
+  private hapticsModule: any = null;
+  private rnHapticsModule: any = null;
   private initialized = false;
 
   async initialize(): Promise<void> {
@@ -48,25 +33,23 @@ class HapticsControllerClass {
     const capabilities = PerformanceMonitor.getCapabilities();
     this.enabled = capabilities.supportsHaptics;
 
-    // Try to load haptics libraries (these are optional peer dependencies)
-    try {
-      if (Platform.OS === 'ios') {
-        // Try expo-haptics first
-        const expoHaptics = await import('expo-haptics').catch(() => null);
-        if (expoHaptics) {
-          this.hapticsModule = expoHaptics as HapticsModule;
-          return;
-        }
+    // Dynamic imports wrapped to avoid TypeScript module errors
+    if (Platform.OS === 'ios') {
+      try {
+        // @ts-ignore - expo-haptics is an optional dependency
+        this.hapticsModule = await import('expo-haptics');
+        return;
+      } catch {
+        // expo-haptics not available
       }
+    }
 
-      // Try react-native-haptic-feedback
-      const rnHaptics = await import('react-native-haptic-feedback').catch(() => null);
-      if (rnHaptics?.default) {
-        this.rnHapticsModule = rnHaptics.default as ReactNativeHapticsModule;
-      }
+    try {
+      // @ts-ignore - react-native-haptic-feedback is an optional dependency
+      const rnHaptics = await import('react-native-haptic-feedback');
+      this.rnHapticsModule = rnHaptics?.default || rnHaptics;
     } catch {
-      // Haptics not available
-      console.log('Haptics libraries not available');
+      // react-native-haptic-feedback not available
     }
   }
 
@@ -79,18 +62,14 @@ class HapticsControllerClass {
   }
 
   isAvailable(): boolean {
-    return (
-      this.enabled &&
-      (this.hapticsModule !== null || this.rnHapticsModule !== null)
-    );
+    return this.enabled && (this.hapticsModule !== null || this.rnHapticsModule !== null);
   }
 
   async trigger(type: HapticFeedbackType, options?: HapticOptions): Promise<void> {
-    if (!this.enabled || (options?.enabled === false)) return;
+    if (!this.enabled || options?.enabled === false) return;
 
     await this.initialize();
 
-    // Adjust for intensity (skip light haptics at low intensity)
     const effectiveIntensity = (options?.intensity ?? 1) * this.intensity;
     if (effectiveIntensity < 0.3 && (type === 'light' || type === 'soft' || type === 'selection')) {
       return;
@@ -108,28 +87,31 @@ class HapticsControllerClass {
   }
 
   private async triggerExpoHaptics(type: HapticFeedbackType): Promise<void> {
-    const { impactAsync, notificationAsync, selectionAsync } = this.hapticsModule || {};
+    if (!this.hapticsModule) return;
+
+    const { impactAsync, notificationAsync, selectionAsync, ImpactFeedbackStyle, NotificationFeedbackType } =
+      this.hapticsModule;
 
     switch (type) {
       case 'light':
       case 'soft':
-        await impactAsync?.('light');
+        await impactAsync?.(ImpactFeedbackStyle?.Light);
         break;
       case 'medium':
-        await impactAsync?.('medium');
+        await impactAsync?.(ImpactFeedbackStyle?.Medium);
         break;
       case 'heavy':
       case 'rigid':
-        await impactAsync?.('heavy');
+        await impactAsync?.(ImpactFeedbackStyle?.Heavy);
         break;
       case 'success':
-        await notificationAsync?.('success');
+        await notificationAsync?.(NotificationFeedbackType?.Success);
         break;
       case 'warning':
-        await notificationAsync?.('warning');
+        await notificationAsync?.(NotificationFeedbackType?.Warning);
         break;
       case 'error':
-        await notificationAsync?.('error');
+        await notificationAsync?.(NotificationFeedbackType?.Error);
         break;
       case 'selection':
         await selectionAsync?.();
@@ -158,7 +140,6 @@ class HapticsControllerClass {
     });
   }
 
-  // Contextual haptics based on gesture patterns
   async gestureHaptic(pattern: HapticPattern): Promise<void> {
     const mappings: Record<HapticPattern, HapticFeedbackType> = {
       tap: 'light',
@@ -172,7 +153,6 @@ class HapticsControllerClass {
     await this.trigger(mappings[pattern]);
   }
 
-  // Progressive haptics (increases in intensity)
   async progressive(
     steps: number,
     interval: number,
@@ -193,13 +173,8 @@ class HapticsControllerClass {
     }
   }
 
-  // Scroll-based haptics (call this during scroll)
   private lastScrollHapticTime = 0;
-  async scrollHaptic(
-    offset: number,
-    threshold = 100,
-    minInterval = 100
-  ): Promise<void> {
+  async scrollHaptic(offset: number, threshold = 100, minInterval = 100): Promise<void> {
     const now = Date.now();
     if (now - this.lastScrollHapticTime < minInterval) return;
 
@@ -209,17 +184,14 @@ class HapticsControllerClass {
     }
   }
 
-  // Confirmation haptic pattern
   async confirm(): Promise<void> {
     await this.trigger('success');
   }
 
-  // Rejection haptic pattern
   async reject(): Promise<void> {
     await this.trigger('error');
   }
 
-  // Warning haptic pattern
   async warn(): Promise<void> {
     await this.trigger('warning');
   }
