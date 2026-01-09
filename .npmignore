@@ -1,0 +1,33 @@
+# Source (we ship lib/)
+src/
+
+# Config files
+tsconfig.json
+tsconfig.build.json
+.eslintrc.js
+babel.config.js
+jest.config.js
+
+# Tests
+__tests__/
+__mocks__/
+coverage/
+
+# Examples
+examples/
+
+# Docs (README is included)
+docs/
+
+# Development
+.github/
+.vscode/
+.idea/
+
+# Git
+.git/
+.gitignore
+
+# Misc
+*.log
+.DS_Store
