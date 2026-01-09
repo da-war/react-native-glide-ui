@@ -2,12 +2,12 @@ import { Dimensions, ScaledSize } from 'react-native';
 import { PerformanceMonitor, DeviceCapabilities } from './PerformanceMonitor';
 
 export interface BreakpointConfig {
-  xs: number;  // 0-359
-  sm: number;  // 360-479
-  md: number;  // 480-767
-  lg: number;  // 768-1023
-  xl: number;  // 1024-1279
-  xxl: number; // 1280+
+  xs: number;
+  sm: number;
+  md: number;
+  lg: number;
+  xl: number;
+  xxl: number;
 }
 
 export type Breakpoint = keyof BreakpointConfig;
@@ -75,8 +75,12 @@ class AdaptiveLayoutEngineClass {
   private listeners: Set<LayoutListener> = new Set();
   private currentMetrics: LayoutMetrics | null = null;
   private dimensionSubscription: ReturnType<typeof Dimensions.addEventListener> | null = null;
+  private initialized = false;
 
   initialize(customBreakpoints?: Partial<BreakpointConfig>): void {
+    if (this.initialized) return;
+    this.initialized = true;
+
     if (customBreakpoints) {
       this.breakpoints = { ...DEFAULT_BREAKPOINTS, ...customBreakpoints };
     }
@@ -87,6 +91,7 @@ class AdaptiveLayoutEngineClass {
   destroy(): void {
     this.dimensionSubscription?.remove();
     this.listeners.clear();
+    this.initialized = false;
   }
 
   private handleDimensionChange = ({ window }: { window: ScaledSize }): void => {
@@ -97,8 +102,8 @@ class AdaptiveLayoutEngineClass {
     const capabilities = PerformanceMonitor.getCapabilities();
     const breakpoint = this.getBreakpoint(window.width);
     const isTablet = this.detectTablet(window, capabilities);
-    
-    this.currentMetrics = {
+
+    const newMetrics: LayoutMetrics = {
       width: window.width,
       height: window.height,
       breakpoint,
@@ -109,7 +114,16 @@ class AdaptiveLayoutEngineClass {
       typography: this.calculateTypography(breakpoint, isTablet, capabilities),
     };
 
-    this.notifyListeners();
+    // Only notify if actually changed
+    if (
+      !this.currentMetrics ||
+      this.currentMetrics.width !== newMetrics.width ||
+      this.currentMetrics.height !== newMetrics.height ||
+      this.currentMetrics.breakpoint !== newMetrics.breakpoint
+    ) {
+      this.currentMetrics = newMetrics;
+      this.notifyListeners();
+    }
   }
 
   private getBreakpoint(width: number): Breakpoint {
@@ -128,7 +142,6 @@ class AdaptiveLayoutEngineClass {
   }
 
   private getDefaultSafeArea(capabilities: DeviceCapabilities) {
-    // Conservative defaults, should be overridden by SafeAreaProvider
     return {
       top: capabilities.tier === 'ultra' ? 47 : 20,
       bottom: capabilities.tier === 'ultra' ? 34 : 0,
@@ -166,8 +179,6 @@ class AdaptiveLayoutEngineClass {
     capabilities: DeviceCapabilities
   ): TypographyScale {
     const baseFontSize = isTablet ? 18 : 16;
-    
-    // Adjust for screen density
     const densityFactor = capabilities.screenDensity > 3 ? 1.05 : 1;
 
     const scales = {
@@ -199,9 +210,7 @@ class AdaptiveLayoutEngineClass {
 
   subscribe(listener: LayoutListener): () => void {
     this.listeners.add(listener);
-    if (this.currentMetrics) {
-      listener(this.currentMetrics);
-    }
+    // Don't call listener immediately - prevents re-render loop
     return () => this.listeners.delete(listener);
   }
 
@@ -212,7 +221,6 @@ class AdaptiveLayoutEngineClass {
     return this.currentMetrics!;
   }
 
-  // Responsive value resolver
   resolve<T>(value: ResponsiveValue<T> | T): T {
     if (typeof value !== 'object' || value === null) {
       return value as T;
@@ -223,7 +231,6 @@ class AdaptiveLayoutEngineClass {
     const breakpointOrder: Breakpoint[] = ['xxl', 'xl', 'lg', 'md', 'sm', 'xs'];
     const currentIndex = breakpointOrder.indexOf(metrics.breakpoint);
 
-    // Find the value for current breakpoint or the nearest smaller one
     for (let i = currentIndex; i < breakpointOrder.length; i++) {
       const bp = breakpointOrder[i];
       if (responsiveValue[bp] !== undefined) {
@@ -231,11 +238,9 @@ class AdaptiveLayoutEngineClass {
       }
     }
 
-    // Fall back to base or return undefined-safe default
     return responsiveValue.base as T;
   }
 
-  // Utility functions for responsive calculations
   wp(percentage: number): number {
     return Math.round((this.getMetrics().width * percentage) / 100);
   }
@@ -244,7 +249,6 @@ class AdaptiveLayoutEngineClass {
     return Math.round((this.getMetrics().height * percentage) / 100);
   }
 
-  // Calculate columns based on breakpoint
   getColumns(config?: Partial<Record<Breakpoint, number>>): number {
     const defaults: Record<Breakpoint, number> = {
       xs: 1,

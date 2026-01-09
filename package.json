@@ -1,6 +1,6 @@
 {
   "name": "react-native-glide-ui",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Adaptive UI system with smooth animations, gesture detection, haptic feedback, and automatic performance optimization for React Native & Expo",
   "main": "lib/commonjs/index.js",
   "module": "lib/module/index.js",

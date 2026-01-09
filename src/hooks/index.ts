@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import {
   useSharedValue,
   useAnimatedStyle,
@@ -39,14 +39,31 @@ export interface UseGlideLayoutReturn {
 }
 
 export function useGlideLayout(): UseGlideLayoutReturn {
-  const [metrics, setMetrics] = useState<LayoutMetrics>(() => AdaptiveLayoutEngine.getMetrics());
+  const initialized = useRef(false);
+  
+  const [metrics, setMetrics] = useState<LayoutMetrics>(() => {
+    if (!initialized.current) {
+      initialized.current = true;
+      AdaptiveLayoutEngine.initialize();
+    }
+    return AdaptiveLayoutEngine.getMetrics();
+  });
 
   useEffect(() => {
-    AdaptiveLayoutEngine.initialize();
-    const unsubscribe = AdaptiveLayoutEngine.subscribe(setMetrics);
-    return () => {
-      unsubscribe();
-    };
+    const unsubscribe = AdaptiveLayoutEngine.subscribe((newMetrics) => {
+      setMetrics((prev) => {
+        if (
+          prev.width !== newMetrics.width ||
+          prev.height !== newMetrics.height ||
+          prev.breakpoint !== newMetrics.breakpoint
+        ) {
+          return newMetrics;
+        }
+        return prev;
+      });
+    });
+
+    return unsubscribe;
   }, []);
 
   return useMemo(
@@ -370,8 +387,13 @@ export interface UseGlideHapticsReturn {
 }
 
 export function useGlideHaptics(): UseGlideHapticsReturn {
+  const initialized = useRef(false);
+
   useEffect(() => {
-    HapticsController.initialize();
+    if (!initialized.current) {
+      initialized.current = true;
+      HapticsController.initialize();
+    }
   }, []);
 
   const trigger = useCallback((type: HapticFeedbackType) => {
