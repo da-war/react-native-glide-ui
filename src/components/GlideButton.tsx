@@ -1,14 +1,11 @@
 import React, { forwardRef, useMemo, useCallback } from 'react';
-import { StyleSheet, TextStyle, ViewStyle } from 'react-native';
+import { StyleSheet, TextStyle, ViewStyle, TouchableOpacity, Text } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withSpring,
-  runOnJS,
 } from 'react-native-reanimated';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-
-import { AnimationPresets, AnimationPreset } from '../core/AnimationPresets';
+import { AnimationPresets } from '../core/AnimationPresets';
 import { HapticsController, HapticFeedbackType } from '../core/HapticsController';
 import { useGlideLayout } from '../hooks';
 
@@ -25,7 +22,6 @@ export interface GlideButtonProps {
   textColor?: string;
   disabled?: boolean;
   loading?: boolean;
-  animationPreset?: AnimationPreset;
   scaleDown?: number;
   haptic?: HapticFeedbackType | false;
   style?: ViewStyle;
@@ -34,6 +30,7 @@ export interface GlideButtonProps {
   rounded?: boolean | number;
   leftIcon?: React.ReactNode;
   rightIcon?: React.ReactNode;
+  flex?: number;
 }
 
 const SIZE_CONFIG = {
@@ -50,7 +47,9 @@ const COLORS = {
   disabledText: '#8E8E93',
 };
 
-export const GlideButton = forwardRef<Animated.View, GlideButtonProps>(
+const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
+
+export const GlideButton = forwardRef<typeof AnimatedTouchable, GlideButtonProps>(
   (
     {
       children,
@@ -62,7 +61,6 @@ export const GlideButton = forwardRef<Animated.View, GlideButtonProps>(
       textColor,
       disabled = false,
       loading = false,
-      animationPreset = 'snappy',
       scaleDown = 0.96,
       haptic = 'light',
       style,
@@ -71,70 +69,64 @@ export const GlideButton = forwardRef<Animated.View, GlideButtonProps>(
       rounded,
       leftIcon,
       rightIcon,
+      flex,
     },
     ref
   ) => {
     const { spacing } = useGlideLayout();
     const scale = useSharedValue(1);
-    const opacity = useSharedValue(1);
 
     const isDisabled = disabled || loading;
     const sizeConfig = SIZE_CONFIG[size];
 
+    const handlePressIn = useCallback(() => {
+      scale.value = withSpring(scaleDown, AnimationPresets.getSpringConfig('snappy'));
+    }, [scale, scaleDown]);
+
+    const handlePressOut = useCallback(() => {
+      scale.value = withSpring(1, AnimationPresets.getSpringConfig('bounce'));
+    }, [scale]);
+
     const handlePress = useCallback(() => {
       if (isDisabled) return;
-      if (haptic) HapticsController.trigger(haptic);
+      if (haptic) {
+        HapticsController.trigger(haptic);
+      }
       onPress?.();
     }, [isDisabled, haptic, onPress]);
 
     const handleLongPress = useCallback(() => {
       if (isDisabled) return;
-      if (haptic) HapticsController.trigger('medium');
+      if (haptic) {
+        HapticsController.trigger('medium');
+      }
       onLongPress?.();
     }, [isDisabled, haptic, onLongPress]);
 
-    const gesture = useMemo(() => {
-      const tap = Gesture.Tap()
-        .enabled(!isDisabled)
-        .onBegin(() => {
-          scale.value = withSpring(scaleDown, AnimationPresets.getSpringConfig(animationPreset));
-          opacity.value = withSpring(0.9);
-        })
-        .onFinalize(() => {
-          scale.value = withSpring(1, AnimationPresets.getSpringConfig('bounce'));
-          opacity.value = withSpring(1);
-        })
-        .onEnd(() => {
-          runOnJS(handlePress)();
-        });
-
-      const longPress = Gesture.LongPress()
-        .enabled(!isDisabled && !!onLongPress)
-        .minDuration(500)
-        .onStart(() => {
-          runOnJS(handleLongPress)();
-        });
-
-      return Gesture.Race(tap, longPress);
-    }, [isDisabled, scale, opacity, scaleDown, animationPreset, handlePress, onLongPress, handleLongPress]);
-
     const animatedStyle = useAnimatedStyle(() => ({
       transform: [{ scale: scale.value }],
-      opacity: opacity.value,
     }));
 
     const variantStyle = useMemo<ViewStyle>(() => {
       const baseRadius = rounded === true ? sizeConfig.height / 2 : rounded || spacing.sm;
-      
+
       switch (variant) {
         case 'solid':
           return { backgroundColor: isDisabled ? COLORS.disabled : color, borderRadius: baseRadius };
         case 'outline':
-          return { backgroundColor: 'transparent', borderWidth: 2, borderColor: isDisabled ? COLORS.disabled : color, borderRadius: baseRadius };
+          return {
+            backgroundColor: 'transparent',
+            borderWidth: 2,
+            borderColor: isDisabled ? COLORS.disabled : color,
+            borderRadius: baseRadius,
+          };
         case 'ghost':
           return { backgroundColor: 'transparent', borderRadius: baseRadius };
         case 'soft':
-          return { backgroundColor: (isDisabled ? COLORS.disabled : color) + '20', borderRadius: baseRadius };
+          return {
+            backgroundColor: (isDisabled ? COLORS.disabled : color) + '20',
+            borderRadius: baseRadius,
+          };
         default:
           return {};
       }
@@ -147,29 +139,34 @@ export const GlideButton = forwardRef<Animated.View, GlideButtonProps>(
     }, [textColor, variant, color, isDisabled]);
 
     return (
-      <GestureDetector gesture={gesture}>
-        <Animated.View
-          ref={ref}
-          style={[
-            styles.container,
-            { height: sizeConfig.height, paddingHorizontal: sizeConfig.paddingHorizontal },
-            variantStyle,
-            fullWidth && styles.fullWidth,
-            style,
-            animatedStyle,
-          ]}
-        >
-          {leftIcon && <Animated.View style={styles.iconLeft}>{leftIcon}</Animated.View>}
-          {typeof children === 'string' ? (
-            <Animated.Text style={[{ fontSize: sizeConfig.fontSize, fontWeight: '600', color: computedTextColor }, textStyle]}>
-              {children}
-            </Animated.Text>
-          ) : (
-            children
-          )}
-          {rightIcon && <Animated.View style={styles.iconRight}>{rightIcon}</Animated.View>}
-        </Animated.View>
-      </GestureDetector>
+      <AnimatedTouchable
+        ref={ref as any}
+        onPress={handlePress}
+        onLongPress={onLongPress ? handleLongPress : undefined}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        disabled={isDisabled}
+        activeOpacity={1}
+        style={[
+          styles.container,
+          { height: sizeConfig.height, paddingHorizontal: sizeConfig.paddingHorizontal },
+          variantStyle,
+          fullWidth && styles.fullWidth,
+          flex !== undefined && { flex },
+          style,
+          animatedStyle,
+        ]}
+      >
+        {leftIcon && <Animated.View style={styles.iconLeft}>{leftIcon}</Animated.View>}
+        {typeof children === 'string' ? (
+          <Text style={[{ fontSize: sizeConfig.fontSize, fontWeight: '600', color: computedTextColor }, textStyle]}>
+            {children}
+          </Text>
+        ) : (
+          children
+        )}
+        {rightIcon && <Animated.View style={styles.iconRight}>{rightIcon}</Animated.View>}
+      </AnimatedTouchable>
     );
   }
 );

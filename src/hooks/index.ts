@@ -6,19 +6,12 @@ import {
   withTiming,
   interpolate,
   Extrapolation,
-  runOnJS,
   useDerivedValue,
   SharedValue,
 } from 'react-native-reanimated';
-import {
-  Gesture,
-  GestureStateChangeEvent,
-  PanGestureHandlerEventPayload,
-} from 'react-native-gesture-handler';
 
 import { PerformanceMonitor, DeviceCapabilities, PerformanceMetrics } from '../core/PerformanceMonitor';
 import { AdaptiveLayoutEngine, LayoutMetrics, ResponsiveValue, Breakpoint } from '../core/AdaptiveLayoutEngine';
-import { GestureIntelligence, SwipeGestureData } from '../core/GestureIntelligence';
 import { AnimationPresets, AnimationPreset, AnimationOptions } from '../core/AnimationPresets';
 import { HapticsController, HapticFeedbackType } from '../core/HapticsController';
 
@@ -40,7 +33,7 @@ export interface UseGlideLayoutReturn {
 
 export function useGlideLayout(): UseGlideLayoutReturn {
   const initialized = useRef(false);
-  
+
   const [metrics, setMetrics] = useState<LayoutMetrics>(() => {
     if (!initialized.current) {
       initialized.current = true;
@@ -170,178 +163,31 @@ export function useGlideAnimation(options: UseGlideAnimationOptions = {}): UseGl
 }
 
 // ============================================
-// useGlideGesture
+// useGlideScale (for press animations)
 // ============================================
-export interface UseGlideGestureOptions {
-  onSwipe?: (data: SwipeGestureData) => void;
-  onSwipeLeft?: () => void;
-  onSwipeRight?: () => void;
-  onSwipeUp?: () => void;
-  onSwipeDown?: () => void;
-  enableHaptics?: boolean;
-  snapPoints?: number[];
-}
-
-export interface UseGlideGestureReturn {
-  gesture: ReturnType<typeof Gesture.Pan>;
-  translationX: SharedValue<number>;
-  translationY: SharedValue<number>;
-  isActive: SharedValue<boolean>;
+export interface UseGlideScaleReturn {
+  scale: SharedValue<number>;
   animatedStyle: ReturnType<typeof useAnimatedStyle>;
+  onPressIn: () => void;
+  onPressOut: () => void;
 }
 
-export function useGlideGesture(options: UseGlideGestureOptions = {}): UseGlideGestureReturn {
-  const {
-    onSwipe,
-    onSwipeLeft,
-    onSwipeRight,
-    onSwipeUp,
-    onSwipeDown,
-    enableHaptics = true,
-    snapPoints,
-  } = options;
-
-  const translationX = useSharedValue(0);
-  const translationY = useSharedValue(0);
-  const isActive = useSharedValue(false);
-
-  const handleSwipe = useCallback(
-    (data: SwipeGestureData) => {
-      onSwipe?.(data);
-
-      if (enableHaptics && data.direction !== 'none') {
-        HapticsController.gestureHaptic('swipe');
-      }
-
-      switch (data.direction) {
-        case 'left':
-          onSwipeLeft?.();
-          break;
-        case 'right':
-          onSwipeRight?.();
-          break;
-        case 'up':
-          onSwipeUp?.();
-          break;
-        case 'down':
-          onSwipeDown?.();
-          break;
-      }
-    },
-    [onSwipe, onSwipeLeft, onSwipeRight, onSwipeUp, onSwipeDown, enableHaptics]
-  );
-
-  const gesture = useMemo(
-    () =>
-      Gesture.Pan()
-        .onStart(() => {
-          isActive.value = true;
-        })
-        .onUpdate((event) => {
-          translationX.value = event.translationX;
-          translationY.value = event.translationY;
-        })
-        .onEnd((event) => {
-          isActive.value = false;
-          const swipeData = GestureIntelligence.analyzeSwipe(
-            event as GestureStateChangeEvent<PanGestureHandlerEventPayload>
-          );
-          runOnJS(handleSwipe)(swipeData);
-
-          if (snapPoints && snapPoints.length > 0) {
-            const snapX = GestureIntelligence.calculateSnapPoint(
-              translationX.value,
-              event.velocityX,
-              snapPoints
-            );
-            translationX.value = withSpring(snapX, AnimationPresets.getSpringConfig('snappy'));
-          } else {
-            translationX.value = withSpring(0, AnimationPresets.getSpringConfig('smooth'));
-          }
-          translationY.value = withSpring(0, AnimationPresets.getSpringConfig('smooth'));
-        }),
-    [isActive, translationX, translationY, handleSwipe, snapPoints]
-  );
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: translationX.value }, { translateY: translationY.value }],
-  }));
-
-  return { gesture, translationX, translationY, isActive, animatedStyle };
-}
-
-// ============================================
-// useGlidePress
-// ============================================
-export interface UseGlidePressOptions {
-  scaleDown?: number;
-  hapticType?: HapticFeedbackType;
-  onPress?: () => void;
-  onLongPress?: () => void;
-  disabled?: boolean;
-}
-
-export interface UseGlidePressReturn {
-  gesture: ReturnType<typeof Gesture.Race>;
-  animatedStyle: ReturnType<typeof useAnimatedStyle>;
-  isPressed: SharedValue<boolean>;
-}
-
-export function useGlidePress(options: UseGlidePressOptions = {}): UseGlidePressReturn {
-  const { scaleDown = 0.96, hapticType = 'light', onPress, onLongPress, disabled = false } = options;
-
-  const isPressed = useSharedValue(false);
+export function useGlideScale(scaleDown = 0.96): UseGlideScaleReturn {
   const scale = useSharedValue(1);
 
-  const handlePress = useCallback(() => {
-    if (disabled) return;
-    HapticsController.trigger(hapticType);
-    onPress?.();
-  }, [disabled, hapticType, onPress]);
+  const onPressIn = useCallback(() => {
+    scale.value = withSpring(scaleDown, AnimationPresets.getSpringConfig('snappy'));
+  }, [scale, scaleDown]);
 
-  const handleLongPress = useCallback(() => {
-    if (disabled) return;
-    HapticsController.trigger('medium');
-    onLongPress?.();
-  }, [disabled, onLongPress]);
-
-  const tapGesture = useMemo(
-    () =>
-      Gesture.Tap()
-        .enabled(!disabled)
-        .onBegin(() => {
-          isPressed.value = true;
-          scale.value = withSpring(scaleDown, AnimationPresets.getSpringConfig('snappy'));
-        })
-        .onFinalize(() => {
-          isPressed.value = false;
-          scale.value = withSpring(1, AnimationPresets.getSpringConfig('bounce'));
-        })
-        .onEnd(() => {
-          runOnJS(handlePress)();
-        }),
-    [disabled, isPressed, scale, scaleDown, handlePress]
-  );
-
-  const longPressGesture = useMemo(
-    () =>
-      Gesture.LongPress()
-        .enabled(!disabled && !!onLongPress)
-        .minDuration(500)
-        .onStart(() => {
-          runOnJS(handleLongPress)();
-        }),
-    [disabled, onLongPress, handleLongPress]
-  );
-
-  const gesture = useMemo(() => Gesture.Race(tapGesture, longPressGesture), [tapGesture, longPressGesture]);
+  const onPressOut = useCallback(() => {
+    scale.value = withSpring(1, AnimationPresets.getSpringConfig('bounce'));
+  }, [scale]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
-    opacity: disabled ? 0.5 : 1,
   }));
 
-  return { gesture, animatedStyle, isPressed };
+  return { scale, animatedStyle, onPressIn, onPressOut };
 }
 
 // ============================================

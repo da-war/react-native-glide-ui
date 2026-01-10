@@ -1,14 +1,12 @@
 import React, { forwardRef, useMemo, useCallback } from 'react';
-import { StyleSheet, ViewStyle } from 'react-native';
+import { StyleSheet, ViewStyle, TouchableOpacity } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withSpring,
-  runOnJS,
   FadeIn,
   SlideInDown,
 } from 'react-native-reanimated';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { AnimationPresets } from '../core/AnimationPresets';
 import { HapticsController } from '../core/HapticsController';
 import { useGlideLayout } from '../hooks';
@@ -27,12 +25,14 @@ export interface GlideCardProps {
   delay?: number;
 }
 
-export const GlideCard = forwardRef<Animated.View, GlideCardProps>(
+const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
+
+export const GlideCard = forwardRef<typeof AnimatedTouchable, GlideCardProps>(
   (
     {
       children,
       onPress,
-      pressable = !!onPress,
+      pressable,
       elevated = true,
       bordered = false,
       rounded = true,
@@ -46,38 +46,39 @@ export const GlideCard = forwardRef<Animated.View, GlideCardProps>(
   ) => {
     const { spacing } = useGlideLayout();
     const scale = useSharedValue(1);
+    const isPressable = pressable !== undefined ? pressable : !!onPress;
+
+    const handlePressIn = useCallback(() => {
+      if (isPressable) {
+        scale.value = withSpring(0.98, AnimationPresets.getSpringConfig('snappy'));
+      }
+    }, [scale, isPressable]);
+
+    const handlePressOut = useCallback(() => {
+      if (isPressable) {
+        scale.value = withSpring(1, AnimationPresets.getSpringConfig('bounce'));
+      }
+    }, [scale, isPressable]);
 
     const handlePress = useCallback(() => {
       HapticsController.trigger('light');
       onPress?.();
     }, [onPress]);
 
-    const gesture = useMemo(() => {
-      if (!pressable) return Gesture.Tap().enabled(false);
-      
-      return Gesture.Tap()
-        .onBegin(() => {
-          scale.value = withSpring(0.98, AnimationPresets.getSpringConfig('snappy'));
-        })
-        .onFinalize(() => {
-          scale.value = withSpring(1, AnimationPresets.getSpringConfig('bounce'));
-        })
-        .onEnd(() => {
-          runOnJS(handlePress)();
-        });
-    }, [pressable, scale, handlePress]);
-
     const animatedStyle = useAnimatedStyle(() => ({
       transform: [{ scale: scale.value }],
     }));
 
-    const containerStyle = useMemo<ViewStyle>(() => ({
-      backgroundColor: bg,
-      borderRadius: rounded === true ? spacing.md : rounded || 0,
-      padding: padding ?? spacing.md,
-      ...(elevated && styles.elevated),
-      ...(bordered && styles.bordered),
-    }), [bg, rounded, padding, elevated, bordered, spacing.md]);
+    const containerStyle = useMemo<ViewStyle>(
+      () => ({
+        backgroundColor: bg,
+        borderRadius: rounded === true ? spacing.md : rounded || 0,
+        padding: padding ?? spacing.md,
+        ...(elevated && styles.elevated),
+        ...(bordered && styles.bordered),
+      }),
+      [bg, rounded, padding, elevated, bordered, spacing.md]
+    );
 
     const enteringAnim = useMemo(() => {
       if (entering === 'fade') return FadeIn.delay(delay).duration(300);
@@ -85,16 +86,26 @@ export const GlideCard = forwardRef<Animated.View, GlideCardProps>(
       return undefined;
     }, [entering, delay]);
 
-    return (
-      <GestureDetector gesture={gesture}>
-        <Animated.View
-          ref={ref}
+    if (isPressable) {
+      return (
+        <AnimatedTouchable
+          ref={ref as any}
+          onPress={handlePress}
+          onPressIn={handlePressIn}
+          onPressOut={handlePressOut}
+          activeOpacity={1}
           style={[containerStyle, style, animatedStyle]}
           entering={enteringAnim}
         >
           {children}
-        </Animated.View>
-      </GestureDetector>
+        </AnimatedTouchable>
+      );
+    }
+
+    return (
+      <Animated.View ref={ref as any} style={[containerStyle, style]} entering={enteringAnim}>
+        {children}
+      </Animated.View>
     );
   }
 );
